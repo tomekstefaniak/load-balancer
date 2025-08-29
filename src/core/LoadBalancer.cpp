@@ -1,26 +1,29 @@
-#include "./includes/core/LoadBalancer.hpp"
+#include "core/LoadBalancer.hpp"
 
-LoadBalancer* LoadBalancer::instance = nullptr;
-std::mutex* LoadBalancer::mutex_;
+LoadBalancer *LoadBalancer::instance = nullptr;
+std::mutex *LoadBalancer::mutex_;
 
 LoadBalancer::LoadBalancer() {}
 
-LoadBalancer* LoadBalancer::GetInstance() {
+LoadBalancer *LoadBalancer::GetInstance()
+{
     // Quick check in case instance already exists
-    if (instance == nullptr) {
+    if (instance == nullptr)
+    {
         // Safe check for safety in case of concurrency
         std::lock_guard<std::mutex> lock(*mutex_);
-        if (instance == nullptr) {
+        if (instance == nullptr)
+        {
             instance = new LoadBalancer();
         }
     }
     return instance;
 }
 
-void LoadBalancer::Start() {
-
+void LoadBalancer::StartWork()
+{
 }
 
-void LoadBalancer::End() {
-
+void LoadBalancer::EndWork()
+{
 }

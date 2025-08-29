@@ -1,2 +1,9 @@
-#include "./includes/utils/ConfigParser.hpp"
-#include "./includes/core/LoadBalancer.hpp"
+#include <iostream>
+#include "utils/ConfigParser.hpp"
+#include "core/LoadBalancer.hpp"
+
+int main()
+{
+    std::cout << "Load Balancer" << std::endl;
+    return 0;
+}
