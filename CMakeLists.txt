@@ -18,18 +18,18 @@ include_directories(include)
 
 # All source files
 set(SOURCES
-    src/cli/CLI.cpp
-    src/core/LoadBalancer.cpp
-    src/core/Server.cpp
-    src/core/ClientThread.cpp
-    src/core/algos/RoundRobin.cpp
-    src/core/algos/LeastConnections.cpp
-    src/utils/ConfigParser.cpp
+        src/cli/CLI.cpp
+        src/core/LoadBalancer.cpp
+        src/core/Server.cpp
+        src/core/SessionsWorker.cpp
+        src/core/algos/RoundRobin.cpp
+        src/core/algos/LeastConnections.cpp
+        src/utils/ConfigParser.cpp
 )
 
 set(TESTS
-    ${SOURCES}
-    tests/ConfigParserTest.cpp
+        ${SOURCES}
+        tests/ConfigParserTest.cpp
 )
 
 # Create loadbalancer executable
@@ -41,7 +41,7 @@ add_executable(tests ${TESTS})
 
 # Link libraries with loadbalancer
 target_link_libraries(loadbalancer
-    nlohmann_json::nlohmann_json
+        nlohmann_json::nlohmann_json
 )
 
 # Link libraries with example
