@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <nlohmann/json.hpp>
-#include "utils/ConfigParser.hpp"
-#include "core/Config.hpp"
+#include "config/ConfigParser.hpp"
+#include "config/Config.hpp"
 
 Config *ConfigParser::ParseConfig(const std::string &configFilePath)
 {
@@ -41,7 +41,6 @@ Config *ConfigParser::ParseConfig(const std::string &configFilePath)
         for (const auto &serverConfig : j["serversConfigs"])
         {
             config->serversConfigs.push_back(ServerConfig{
-                serverConfig["domain"].get<std::string>(),
                 serverConfig["serverIP"].get<std::string>(),
                 serverConfig["serverPort"].get<uint16_t>()});
         }

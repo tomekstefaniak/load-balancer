@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include "core/Config.hpp"
+#include "Config.hpp"
 
 class ConfigParser
 {

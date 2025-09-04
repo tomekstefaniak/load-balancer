@@ -13,7 +13,7 @@ LoadBalancer::LoadBalancer(Config *config) {
 
 }
 
-LoadBalancer *LoadBalancer::SetInstance(Config *config)
+LoadBalancer* LoadBalancer::SetInstance(Config *config)
 {
     // Quick check in case instance already exists
     if (instance == nullptr)

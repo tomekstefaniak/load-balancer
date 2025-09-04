@@ -19,12 +19,11 @@ include_directories(include)
 # All source files
 set(SOURCES
         src/cli/CLI.cpp
+        src/config/ConfigParser.cpp
         src/core/LoadBalancer.cpp
-        src/core/Server.cpp
         src/core/SessionsWorker.cpp
-        src/core/algos/RoundRobin.cpp
-        src/core/algos/LeastConnections.cpp
-        src/utils/ConfigParser.cpp
+        src/strategy/LeastConnections.cpp
+        src/strategy/RoundRobin.cpp
 )
 
 set(TESTS

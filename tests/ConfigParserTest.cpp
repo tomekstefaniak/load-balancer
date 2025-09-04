@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "utils/ConfigParser.hpp"
+#include "config/ConfigParser.hpp"
 
 TEST(ConfigParserTest, ParseConfigFile) {
     // Config file

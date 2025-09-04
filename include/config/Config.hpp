@@ -6,9 +6,13 @@
 
 struct ServerConfig
 {
-    std::string domain;
     std::string serverIP;
     uint16_t serverPort;
+
+    // Overloading for convenient comparison
+    bool operator==(const ServerConfig &other) const {
+        return serverIP == other.serverIP && serverPort == other.serverPort;
+    }
 };
 
 struct Config
