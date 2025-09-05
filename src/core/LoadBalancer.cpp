@@ -1,19 +1,25 @@
 #include <stdexcept>
 #include "core/LoadBalancer.hpp"
+#include "strategy/LeastConnections.hpp"
+#include "strategy/RoundRobin.hpp"
 
 LoadBalancer *LoadBalancer::instance = nullptr;
 std::mutex *LoadBalancer::singletonMutex_ = new std::mutex;
 
-LoadBalancer::LoadBalancer(Config *config) {
-    serversMutex_ = new std::mutex();
-    stateMutex_ = new std::mutex();
-    state_ = ACTIVE;
-
-    // Set config
-
+LoadBalancer::LoadBalancer(Config config)
+    : strategy_(), stateMutex_(new std::mutex), state_(IDLE), serversMutex_(new std::shared_mutex())
+{
+    // Create strategy
+    if (config.algorithmName == "leastconnections") {
+        strategy_ = new LeastConnections(config.serversConfigs);
+    } else if (config.algorithmName == "roundrobin") {
+        strategy_ = new RoundRobin(config.serversConfigs);
+    } else {
+        throw std::invalid_argument("uknown strategy");
+    }
 }
 
-LoadBalancer* LoadBalancer::SetInstance(Config *config)
+LoadBalancer* LoadBalancer::SetInstance(Config config)
 {
     // Quick check in case instance already exists
     if (instance == nullptr)
@@ -30,12 +36,30 @@ LoadBalancer* LoadBalancer::SetInstance(Config *config)
     throw std::runtime_error("LoadBalancer instance exists");
 }
 
-LoadBalancer *LoadBalancer::GetInstance() {
+LoadBalancer *LoadBalancer::GetInstance()
+{
     return instance;
 }
 
-void LoadBalancer::SetupServer() {
+void LoadBalancer::AttachServer(ServerConfig serverConfig)
+{
+    // Lock & enter safely
+    std::unique_lock<std::shared_mutex> lock(*serversMutex_);
+    strategy_->AttachServer(serverConfig);
+}
 
+void LoadBalancer::DettachServer(ServerConfig serverConfig)
+{
+    // Lock & enter safely
+    std::unique_lock<std::shared_mutex> lock(*serversMutex_);
+    strategy_->DettachServer(serverConfig);
+}
+
+std::vector<ServerConfig> LoadBalancer::GetServers()
+{
+    // Lock & enter safely
+    std::unique_lock<std::shared_mutex> lock(*serversMutex_);
+    return strategy_->GetServers();
 }
 
 void LoadBalancer::StartWork()
@@ -43,29 +67,12 @@ void LoadBalancer::StartWork()
 
 }
 
-void LoadBalancer::StopWork() {
+void LoadBalancer::StopWork()
+{
 
 }
 
 LoadBalancer::~LoadBalancer()
 {
-    // Lock in case of SetIntance() call
-    std::lock_guard<std::mutex> lockSingletonMutex(*singletonMutex_);
-    // Lock in case of calls of methods making operations on servers_
-    std::lock_guard<std::mutex> lockOpsMutex(*serversMutex_);
-    // Lock in case of methods modifying state of load balancer
-    std::lock_guard<std::mutex> lockStateMutex(*stateMutex_);
 
-    // Stop the load balancer
-    this->StopWork();
-
-    // Reset static singleton fields
-    instance = nullptr;
-    singletonMutex_ = new std::mutex;
-
-    // Closing servers and deleting them
-    for (const auto server : servers_) {
-        // Close connections
-        delete server; // Free memory
-    }
 }

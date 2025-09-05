@@ -14,7 +14,6 @@ TEST(ConfigParserTest, ParseConfigFile) {
     std::cout << "\talgorithmName: " << config->algorithmName << std::endl;
     for (const auto &serverConfig: config->serversConfigs) {
         std::cout << "\t*" << std::endl;
-        std::cout << "\t\tdomain: " << serverConfig.domain << std::endl;
         std::cout << "\t\tserverPort: " << serverConfig.serverPort << std::endl;
         std::cout << "\t\tserverIP: " << serverConfig.serverIP << std::endl;
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <atomic>
 #include "strategy/IStrategy.hpp"
 
 class LeastConnections : public IStrategy
@@ -12,14 +13,19 @@ public:
     std::shared_ptr<AttachedServer> Next() override;
 
     // Add new server to the group, if already in strategy do nothing
-    void AddServer(ServerConfig serverConfig) override;
+    void AttachServer(ServerConfig serverConfig) override;
 
     // Remove server from the strategy, if not in strategy do nothing
-    void RemoveServer(ServerConfig serverConfig) override;
+    void DettachServer(ServerConfig serverConfig) override;
+
+    // Return list of servers configs objects
+    std::vector<ServerConfig> GetServers() override;
 
     // Signal the server on connection close - logic depends on specific strategy
     void Signal(std::shared_ptr<AttachedServer> server) override;
 
+    ~LeastConnections();
+
 private:
-    std::map<std::shared_ptr<AttachedServer>, uint32_t> servers_;
+    std::map<std::shared_ptr<AttachedServer>, std::atomic<uint32_t>> servers_;
 };

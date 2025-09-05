@@ -1,12 +1,13 @@
 #pragma once
 
 #include <mutex>
+#include <shared_mutex>
 #include "../config/Config.hpp"
+#include "../strategy/IStrategy.hpp"
 
 enum State {
-    DEAD,
-    ACTIVE,
-    IDLE
+    IDLE,
+    BUSY
 };
 
 class LoadBalancer
@@ -18,11 +19,11 @@ public:
 
     /**
      * @brief Set instance of LoadBalancer with provided config
-     * @throws std::runtime_exception When instance already exists
      * @param config
+     * @throws std::runtime_exception When instance already exists
      * @return Pointer to LoadBalancer instance
      */
-    static LoadBalancer* SetInstance(Config *config);
+    static LoadBalancer* SetInstance(Config config);
 
     // Get instance
     static LoadBalancer* GetInstance();
@@ -31,16 +32,13 @@ public:
      * @breief Create and add a new server to LoadBalancer
      * @throws std::runtime_exception When server creation was not successful
      */
-    void SetupServer();
+    void AttachServer(ServerConfig serverConfig);
 
     // Remove server from LoadBalancer suddenly closing all of opened connections with it
-    void RemoveServer();
+    void DettachServer(ServerConfig serverConfig);
 
-    // Return list of servers objects
-    std::vector<ServerConfig*> GetServers();
-
-    // Change load balancing algorithm
-    void ChangeAlgo();
+    // Return list of servers configs objects
+    std::vector<ServerConfig> GetServers();
 
     // Start balancing load
     void StartWork();
@@ -54,24 +52,26 @@ public:
     ~LoadBalancer();
 
 private:
-    static LoadBalancer* instance;
+    // Mutex for synchronization of singleton creation
     static std::mutex* singletonMutex_;
+    // Signleton instance
+    static LoadBalancer* instance;
 
-    // Mutex for servers operations
-    std::mutex *serversMutex_;
-    // Server instances vector
-    std::vector<ServerConfig*> servers_;
-
-    // Mutex for StartWork() and StopWork() methods
+    // Mutex for managing state
     std::mutex* stateMutex_;
-    // State indicating the mode of load balancer
+    // State
     State state_;
 
+    // Mutex for operations on servers in strategy, name comes from servers_ field that requires syncing
+    std::shared_mutex* serversMutex_;
+
+    // Strategy of balancing load
+    IStrategy* strategy_;
 
     /**
      * @brief Sets fields from config, creates sockets one for each server and one clients
-     * @throw std::runtime_exception
+     * @throws std::invalid_argument
      * @param config
      */
-    LoadBalancer(Config *config);
+    LoadBalancer(Config config);
 };

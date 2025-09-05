@@ -24,6 +24,7 @@ set(SOURCES
         src/core/SessionsWorker.cpp
         src/strategy/LeastConnections.cpp
         src/strategy/RoundRobin.cpp
+        src/config/Config.cpp
 )
 
 set(TESTS

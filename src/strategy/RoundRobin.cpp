@@ -7,11 +7,11 @@ RoundRobin::RoundRobin(const std::vector<ServerConfig> &serversConfigs)
 {
     // Create attached server for every server config
     for (const auto &serverConfig : serversConfigs) {
-        auto attachedServer = std::make_shared<AttachedServer>(
+        auto server = std::make_shared<AttachedServer>(
             serverConfig,
             true
         );
-        servers_.push_back(attachedServer);
+        servers_.push_back(server);
     }
 }
 
@@ -27,7 +27,7 @@ std::shared_ptr<AttachedServer> RoundRobin::Next()
     return result;
 }
 
-void RoundRobin::AddServer(ServerConfig serverConfig)
+void RoundRobin::AttachServer(ServerConfig serverConfig)
 {
     // Check if server is already attached
     for (auto &server : servers_) {
@@ -44,7 +44,7 @@ void RoundRobin::AddServer(ServerConfig serverConfig)
     servers_.push_back(server);
 }
 
-void RoundRobin::RemoveServer(ServerConfig serverConfig)
+void RoundRobin::DettachServer(ServerConfig serverConfig)
 {
     // If server is attached, then detach it
     for (int i = 0 ; i < servers_.size() ; i++) {
@@ -60,4 +60,15 @@ void RoundRobin::RemoveServer(ServerConfig serverConfig)
     }
 }
 
+std::vector<ServerConfig> RoundRobin::GetServers()
+{
+    std::vector<ServerConfig> serversConfigs;
+    for (const auto& server : servers_) {
+        serversConfigs.push_back(server->serverConfig);
+    }
+    return serversConfigs;
+}
+
 void RoundRobin::Signal(std::shared_ptr<AttachedServer> server) { }
+
+RoundRobin::~RoundRobin() = default;
