@@ -58,7 +58,7 @@ void LoadBalancer::DettachServer(ServerConfig serverConfig)
 std::vector<ServerConfig> LoadBalancer::GetServers()
 {
     // Lock & enter safely
-    std::unique_lock<std::shared_mutex> lock(*serversMutex_);
+    std::shared_lock<std::shared_mutex> lock(*serversMutex_);
     return strategy_->GetServers();
 }
 
