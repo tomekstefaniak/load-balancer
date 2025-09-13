@@ -8,7 +8,7 @@ public:
     explicit RoundRobin(const std::vector<ServerConfig> &serversConfigs);
 
     // Get next attached server
-    std::shared_ptr<AttachedServer> Next() override;
+    std::shared_ptr<ServerConfig> Next() override;
 
     // Add new server to the group, if already in strategy do nothing
     void AttachServer(ServerConfig serverConfig) override;
@@ -20,11 +20,14 @@ public:
     std::vector<ServerConfig> GetServers() override;
 
     // Signal the server on connection close - empty in this strategy
-    void Signal(std::shared_ptr<AttachedServer> server) override;
+    void Signal(std::shared_ptr<ServerConfig> server) override;
+
+    // Reset strategy state
+    void Reset() override;
 
     ~RoundRobin();
 
 private:
-    std::vector<std::shared_ptr<AttachedServer>> servers_;
+    std::vector<std::shared_ptr<ServerConfig>> servers_;
     int32_t curr_;
 };
