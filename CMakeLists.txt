@@ -12,6 +12,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find libraries
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
+find_package(Boost CONFIG REQUIRED bimap)
+find_package(Boost CONFIG REQUIRED asio)
 
 # Include directories
 include_directories(include)
@@ -34,19 +36,14 @@ set(TESTS
 
 # Create loadbalancer executable
 add_executable(loadbalancer src/main.cpp ${SOURCES})
-# Create example executable
-add_executable(example example/example.cpp ${SOURCES})
 # Create tests executable
 add_executable(tests ${TESTS})
 
 # Link libraries with loadbalancer
 target_link_libraries(loadbalancer
         nlohmann_json::nlohmann_json
-)
-
-# Link libraries with example
-target_link_libraries(example
-        nlohmann_json::nlohmann_json
+        Boost::bimap
+        Boost::asio
 )
 
 # Link libraries with tests
@@ -54,4 +51,6 @@ target_link_libraries(tests
         nlohmann_json::nlohmann_json
         GTest::gtest
         GTest::gtest_main
+        Boost::bimap
+        Boost::asio
 )
