@@ -6,5 +6,5 @@
 class ConfigParser
 {
 public:
-    static Config* ParseConfig(const std::string &configFilePath);
+    static Config ParseConfig(const std::string &configFilePath);
 };

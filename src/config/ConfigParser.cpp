@@ -6,7 +6,7 @@
 #include "config/ConfigParser.hpp"
 #include "config/Config.hpp"
 
-Config *ConfigParser::ParseConfig(const std::string &configFilePath)
+Config ConfigParser::ParseConfig(const std::string &configFilePath)
 {
     // Read the config file content
     std::ifstream configFile(configFilePath);
@@ -19,28 +19,31 @@ Config *ConfigParser::ParseConfig(const std::string &configFilePath)
     std::string configString = configBuffer.str();
 
     // Parse content of the json config file to Config struct
-    auto config = new Config {
-        0,
+    Config config{
         "",
+        0,
         std::vector<ServerConfig>()
     };
+    
     try
     {
-        // Parse json config file
+    // Parse json config file
         nlohmann::json j = nlohmann::json::parse(configBuffer.str());
 
-        // Extract config fields
-        config->clientsPort = j["clientsPort"].get<uint16_t>();
-        config->algorithmName = j["algorithmName"].get<std::string>();
+    // Extract config fields
+        config.clientsPort = j["clientsPort"].get<uint16_t>();
+
+        config.algorithmName = j["algorithmName"].get<std::string>();
         std::transform(
-            config->algorithmName.begin(),
-            config->algorithmName.end(),
-            config->algorithmName.begin(),
-            [](unsigned char c) -> unsigned char { return std::tolower(c); }
-        ); // Convert algorithm name to lower case
+            config.algorithmName.begin(),
+            config.algorithmName.end(),
+            config.algorithmName.begin(),
+            [](unsigned char c) -> unsigned char
+            { return std::tolower(c); }); // Convert algorithm name to lower case
+
         for (const auto &serverConfig : j["serversConfigs"])
         {
-            config->serversConfigs.push_back(ServerConfig{
+            config.serversConfigs.push_back(ServerConfig{
                 serverConfig["serverIP"].get<std::string>(),
                 serverConfig["serverPort"].get<uint16_t>()});
         }

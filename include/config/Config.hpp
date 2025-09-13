@@ -26,7 +26,7 @@ private:
 
 struct Config
 {
-    uint16_t clientsPort;
     std::string algorithmName;
+    uint16_t clientsPort;
     std::vector<ServerConfig> serversConfigs;
 };
