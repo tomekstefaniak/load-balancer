@@ -5,5 +5,6 @@ import (
 )
 
 type Strategy interface {
-	PickBackend() (*config.Backend, error)
+	PickBackend() (config.Backend, error)
+	OnRelease(backend config.Backend)
 }

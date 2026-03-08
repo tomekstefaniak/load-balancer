@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"lil-balancer/config"
 	"lil-balancer/strategy"
@@ -23,8 +24,8 @@ type Balancer struct {
 	State 				    int
 	StateMu				   *sync.RWMutex
 	Strategy                strategy.Strategy
-	LoadBalancingStrategyMu *sync.Mutex
-	ConnectionTimeoutSecMu  *sync.RWMutex
+	LoadBalancingStrategyMu *sync.RWMutex
+	IdleTimeoutSecMu  *sync.RWMutex
 	MaxConnectionsMu        *sync.Mutex
 	BackendsMu              *sync.RWMutex
 }
@@ -34,11 +35,11 @@ func NewBalancer(cfg *config.Config) *Balancer {
 	backendsMu := &sync.RWMutex{}
 	switch cfg.LoadBalancingStrategy {
 	case config.RoundRobin:
-		// strat = strategy.NewRoundRobinStrategy(cfg.Backends, backendsMu)
+		strat = strategy.NewRoundRobin(cfg.Backends, backendsMu)
 	case config.LeastConnections:
-		// strat = strategy.NewLeastConnectionsStrategy(cfg.Backends, backendsMu)
+		strat = strategy.NewLeastConnections(cfg.Backends, backendsMu)
 	case config.Random:
-		// strat = strategy.NewRandomStrategy(cfg.Backends, backendsMu)
+		strat = strategy.NewRandom(cfg.Backends, backendsMu)
 	default:
 		panic(fmt.Sprintf("invalid load balancing strategy: %d", cfg.LoadBalancingStrategy))
 	}
@@ -48,8 +49,8 @@ func NewBalancer(cfg *config.Config) *Balancer {
 		State:                   IDLE,
 		StateMu:                 &sync.RWMutex{},
 		Strategy:                strat,
-		LoadBalancingStrategyMu: &sync.Mutex{},
-		ConnectionTimeoutSecMu:  &sync.RWMutex{},
+		LoadBalancingStrategyMu: &sync.RWMutex{},
+		IdleTimeoutSecMu:  &sync.RWMutex{},
 		MaxConnectionsMu:        &sync.Mutex{},
 		BackendsMu:              backendsMu,
 	}
@@ -133,11 +134,16 @@ func (b *Balancer) Balance(
 }
 
 func (b *Balancer) handleConnection(clientConn net.Conn, stopCtx context.Context) {
-	backend, err := b.Strategy.PickBackend()
+	b.LoadBalancingStrategyMu.RLock()
+	strat := b.Strategy // Capture the current strategy under read lock to ensure consistency during selection
+	b.LoadBalancingStrategyMu.RUnlock()
+
+	backend, err := strat.PickBackend()
 	if err != nil {
 		clientConn.Close() // Close client connection if no backend is available
 		return
 	}
+	defer strat.OnRelease(backend) // Ensure backend is released back to the strategy after handling the connection
 
 	backendConn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", backend.Address, backend.Port))
 	if err != nil {
@@ -145,19 +151,25 @@ func (b *Balancer) handleConnection(clientConn net.Conn, stopCtx context.Context
 		return
 	}
 
+	// Read idle timeout
+	b.IdleTimeoutSecMu.RLock()
+	idleTimeout := time.Duration(b.Config.IdleTimeoutSec) * time.Second
+	b.IdleTimeoutSecMu.RUnlock()
+
+	// Wait group for managing goroutines managing bidirectional copy between client and backend
 	connectionWG := &sync.WaitGroup{}
 	connectionWG.Add(2)
 
 	// Client -> Backend
 	go func() {
 		defer connectionWG.Done()
-		io.Copy(backendConn, clientConn)
+		io.Copy(backendConn, &idleTimeoutReader{conn: clientConn, peer: backendConn, timeout: idleTimeout})
 		backendConn.(*net.TCPConn).CloseWrite() // Signal second goroutine we're done sending data
 	}()
 	// Backend -> Client
 	go func() {
 		defer connectionWG.Done()
-		io.Copy(clientConn, backendConn)
+		io.Copy(clientConn, &idleTimeoutReader{conn: backendConn, peer: clientConn, timeout: idleTimeout})
 		clientConn.(*net.TCPConn).CloseWrite() // Signal first goroutine we're done sending data
 	}()
 
@@ -183,16 +195,50 @@ func (b *Balancer) handleConnection(clientConn net.Conn, stopCtx context.Context
 	}
 }
 
-/* Managing configuration */
 
-func (b *Balancer) UpdateLoadBalancingStrategy(strategy string) {
-	// TODO: Implement this method to update the load balancing strategy
+/* Idle timeout for client-backend communication */
+
+type idleTimeoutReader struct {
+	conn    net.Conn
+	peer    net.Conn
+	timeout time.Duration
 }
 
-func (b *Balancer) UpdateConnectionTimeoutSec(timeout int) {
-	b.ConnectionTimeoutSecMu.Lock()
-	defer b.ConnectionTimeoutSecMu.Unlock()
-	b.Config.ConnectionTimeoutSec = timeout
+func (r *idleTimeoutReader) Read(p []byte) (int, error) {
+	r.conn.SetReadDeadline(time.Now().Add(r.timeout))
+	n, err := r.conn.Read(p)
+	if n > 0 {
+		r.peer.SetReadDeadline(time.Now().Add(r.timeout))
+	}
+	return n, err
+}
+
+
+/* Managing configuration */
+
+func (b *Balancer) UpdateLoadBalancingStrategy(strategyType int) {
+	var strat strategy.Strategy
+	switch strategyType {
+	case config.RoundRobin:
+		strat = strategy.NewRoundRobin(b.Config.Backends, b.BackendsMu)
+	case config.LeastConnections:
+		strat = strategy.NewLeastConnections(b.Config.Backends, b.BackendsMu)
+	case config.Random:
+		strat = strategy.NewRandom(b.Config.Backends, b.BackendsMu)
+	default:
+		return // Invalid strategy type, ignore the update
+	}
+
+	b.LoadBalancingStrategyMu.Lock()
+	b.Strategy = strat
+	b.Config.LoadBalancingStrategy = strategyType
+	b.LoadBalancingStrategyMu.Unlock()
+}
+
+func (b *Balancer) UpdateIdleTimeoutSec(timeout int) {
+	b.IdleTimeoutSecMu.Lock()
+	defer b.IdleTimeoutSecMu.Unlock()
+	b.Config.IdleTimeoutSec = timeout
 }
 
 func (b *Balancer) UpdateMaxConnections(max int) {

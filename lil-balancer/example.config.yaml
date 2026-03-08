@@ -2,7 +2,7 @@ ListenerPort: 8080 # Port on which the load balancer listens for incoming connec
 ClientPort: 9080 # Port on which client-app can connect to the load balancer and manage it
 LoadBalancingStrategy: LeastConnections # Load balancing strategy to use
 ServerConnTimeoutSec: 30 # Timeout for establishing a connection to a backend server
-ConnectionTimeoutSec: 120 # Timeout after which an idle connection will be closed
+IdleTimeoutSec: 120 # Timeout after which an idle connection will be closed
 MaxConnections: 1000 # Maximum number of concurrent connections the load balancer will accept
 BackendServers: # List of backend servers to which the load balancer will forward requests
   - Address: "127.0.0.1"

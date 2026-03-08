@@ -33,7 +33,7 @@ type Config struct {
 	ClientPort            int
 	LoadBalancingStrategy int
 	ServerConnTimeoutSec  int
-	ConnectionTimeoutSec  int
+	IdleTimeoutSec        int
 	MaxConnections        int
 	Backends              *[]Backend // Pointer to slice for easier updates
 }
@@ -43,7 +43,7 @@ type rawConfig struct {
 	ClientPort            int       `yaml:"ClientPort"`
 	LoadBalancingStrategy string    `yaml:"LoadBalancingStrategy"`
 	ServerConnTimeoutSec  int       `yaml:"ServerConnTimeoutSec"`
-	ConnectionTimeoutSec  int       `yaml:"ConnectionTimeoutSec"`
+	IdleTimeoutSec        int       `yaml:"IdleTimeoutSec"`
 	MaxConnections        int       `yaml:"MaxConnections"`
 	Backends              []Backend `yaml:"Backends"`
 }
@@ -110,11 +110,11 @@ func LoadConfig(f *flags.Flags) (*Config, error) {
 		return nil, fmt.Errorf("server connection timeout not set: use --server-conn-timeout or --config")
 	}
 
-	// ConnectionTimeoutSec
+	// IdleTimeoutSec
 	if f.Timeout.Ok {
-		cfg.ConnectionTimeoutSec = f.Timeout.Value
+		cfg.IdleTimeoutSec = f.Timeout.Value
 	} else if f.ConfigPath.Ok {
-		cfg.ConnectionTimeoutSec = raw.ConnectionTimeoutSec
+		cfg.IdleTimeoutSec = raw.IdleTimeoutSec
 	} else {
 		return nil, fmt.Errorf("timeout not set: use --timeout or --config")
 	}
