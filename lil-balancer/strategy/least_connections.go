@@ -2,7 +2,6 @@ package strategy
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 
 	"lil-balancer/config"
@@ -11,25 +10,24 @@ import (
 type LeastConnections struct {
 	backends    *[]config.Backend
 	backendsMu  *sync.RWMutex
-	connections map[string]int
-	connMu      sync.Mutex
+	connTracker *BackendConnections
 }
 
-func NewLeastConnections(backends *[]config.Backend, backendsMu *sync.RWMutex) *LeastConnections {
+func NewLeastConnections(backends *[]config.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections) *LeastConnections {
 	return &LeastConnections{
 		backends:    backends,
 		backendsMu:  backendsMu,
-		connections: make(map[string]int),
+		connTracker: connTracker,
 	}
 }
 
-func (l *LeastConnections) PickBackend() (config.Backend, error) {
-	l.backendsMu.RLock()
-	defer l.backendsMu.RUnlock()
-	l.connMu.Lock()
-	defer l.connMu.Unlock()
+func (lc *LeastConnections) PickBackend() (config.Backend, error) {
+	lc.backendsMu.RLock()
+	defer lc.backendsMu.RUnlock()
+	lc.connTracker.Mu.Lock()
+	defer lc.connTracker.Mu.Unlock()
 
-	if len(*l.backends) == 0 {
+	if len(*lc.backends) == 0 {
 		return config.Backend{}, errors.New("no backends available")
 	}
 
@@ -37,9 +35,12 @@ func (l *LeastConnections) PickBackend() (config.Backend, error) {
 	pickedConns := -1
 	found := false
 
-	for _, b := range *l.backends {
-		key := backendKey(b)
-		conns := l.connections[key]
+	for _, b := range *lc.backends {
+		key := BackendKey(b)
+		conns := lc.connTracker.Conns[key]
+		if conns >= b.MaxConnections {
+			continue
+		}
 		if !found || conns < pickedConns {
 			picked = b
 			pickedConns = conns
@@ -47,20 +48,20 @@ func (l *LeastConnections) PickBackend() (config.Backend, error) {
 		}
 	}
 
-	l.connections[backendKey(picked)]++
+	if !found {
+		return config.Backend{}, errors.New("all backends at max connections")
+	}
+
+	lc.connTracker.Conns[BackendKey(picked)]++
 	return picked, nil
 }
 
-func (l *LeastConnections) OnRelease(backend config.Backend) {
-	l.connMu.Lock()
-	defer l.connMu.Unlock()
+func (lc *LeastConnections) OnRelease(backend config.Backend) {
+	lc.connTracker.Mu.Lock()
+	defer lc.connTracker.Mu.Unlock()
 
-	key := backendKey(backend)
-	if l.connections[key] > 0 {
-		l.connections[key]--
+	key := BackendKey(backend)
+	if lc.connTracker.Conns[key] > 0 {
+		lc.connTracker.Conns[key]--
 	}
-}
-
-func backendKey(b config.Backend) string {
-	return fmt.Sprintf("%s:%d", b.Address, b.Port)
 }

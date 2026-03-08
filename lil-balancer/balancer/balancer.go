@@ -26,20 +26,24 @@ type Balancer struct {
 	Strategy                strategy.Strategy
 	LoadBalancingStrategyMu *sync.RWMutex
 	IdleTimeoutSecMu  *sync.RWMutex
+	CurrConnectionsMu *sync.Mutex
+	CurrConnections    int
 	MaxConnectionsMu        *sync.Mutex
 	BackendsMu              *sync.RWMutex
+	BackendConns            *strategy.BackendConnections
 }
 
 func NewBalancer(cfg *config.Config) *Balancer {
 	var strat strategy.Strategy
 	backendsMu := &sync.RWMutex{}
+	backendConns := strategy.NewBackendConnections()
 	switch cfg.LoadBalancingStrategy {
 	case config.RoundRobin:
-		strat = strategy.NewRoundRobin(cfg.Backends, backendsMu)
+		strat = strategy.NewRoundRobin(cfg.Backends, backendsMu, backendConns)
 	case config.LeastConnections:
-		strat = strategy.NewLeastConnections(cfg.Backends, backendsMu)
+		strat = strategy.NewLeastConnections(cfg.Backends, backendsMu, backendConns)
 	case config.Random:
-		strat = strategy.NewRandom(cfg.Backends, backendsMu)
+		strat = strategy.NewRandom(cfg.Backends, backendsMu, backendConns)
 	default:
 		panic(fmt.Sprintf("invalid load balancing strategy: %d", cfg.LoadBalancingStrategy))
 	}
@@ -53,6 +57,7 @@ func NewBalancer(cfg *config.Config) *Balancer {
 		IdleTimeoutSecMu:  &sync.RWMutex{},
 		MaxConnectionsMu:        &sync.Mutex{},
 		BackendsMu:              backendsMu,
+		BackendConns:            backendConns,
 	}
 }
 
@@ -94,6 +99,7 @@ func (b *Balancer) Balance(
 		defer balancingWG.Done()
 		for {
 			clientConn, err := listener.Accept()
+
 			if err != nil {
 				select {
 				case <-gracefulShutdownCtx.Done():
@@ -107,6 +113,17 @@ func (b *Balancer) Balance(
 				}
 			}
 
+			// Check max connections before handling the new connection
+			b.CurrConnectionsMu.Lock()
+			if b.CurrConnections >= b.Config.MaxConnections {
+				b.CurrConnectionsMu.Unlock()
+				clientConn.Close() // Reject new connection if max connections reached
+				continue
+			}
+			b.CurrConnections++
+			b.CurrConnectionsMu.Unlock()
+
+			// Handle the connection in a new goroutine
 			balancingWG.Add(1)
 			go func() {
 				defer balancingWG.Done()
@@ -134,8 +151,18 @@ func (b *Balancer) Balance(
 }
 
 func (b *Balancer) handleConnection(clientConn net.Conn, stopCtx context.Context) {
+	// Ensure we decrement the current connections count when done
+	defer func() {
+		b.CurrConnectionsMu.Lock()
+		if b.CurrConnections > 0 {
+			b.CurrConnections--
+		}
+		b.CurrConnectionsMu.Unlock()
+	}()
+
+	// Capture the current strategy under read lock to ensure consistency during selection
 	b.LoadBalancingStrategyMu.RLock()
-	strat := b.Strategy // Capture the current strategy under read lock to ensure consistency during selection
+	strat := b.Strategy
 	b.LoadBalancingStrategyMu.RUnlock()
 
 	backend, err := strat.PickBackend()
@@ -195,7 +222,6 @@ func (b *Balancer) handleConnection(clientConn net.Conn, stopCtx context.Context
 	}
 }
 
-
 /* Idle timeout for client-backend communication */
 
 type idleTimeoutReader struct {
@@ -213,18 +239,17 @@ func (r *idleTimeoutReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-
 /* Managing configuration */
 
 func (b *Balancer) UpdateLoadBalancingStrategy(strategyType int) {
 	var strat strategy.Strategy
 	switch strategyType {
 	case config.RoundRobin:
-		strat = strategy.NewRoundRobin(b.Config.Backends, b.BackendsMu)
+		strat = strategy.NewRoundRobin(b.Config.Backends, b.BackendsMu, b.BackendConns)
 	case config.LeastConnections:
-		strat = strategy.NewLeastConnections(b.Config.Backends, b.BackendsMu)
+		strat = strategy.NewLeastConnections(b.Config.Backends, b.BackendsMu, b.BackendConns)
 	case config.Random:
-		strat = strategy.NewRandom(b.Config.Backends, b.BackendsMu)
+		strat = strategy.NewRandom(b.Config.Backends, b.BackendsMu, b.BackendConns)
 	default:
 		return // Invalid strategy type, ignore the update
 	}
@@ -247,8 +272,30 @@ func (b *Balancer) UpdateMaxConnections(max int) {
 	b.Config.MaxConnections = max
 }
 
-func (b *Balancer) UpdateBackends(backends []string) {
-	// TODO: Implement this method to update the list of backends
+func (b *Balancer) AddBackend(backend config.Backend) {
+	b.BackendsMu.Lock()
+	defer b.BackendsMu.Unlock()
+
+	for _, existing := range *b.Config.Backends {
+		if existing.Address == backend.Address && existing.Port == backend.Port {
+			return // Already exists
+		}
+	}
+
+	*b.Config.Backends = append(*b.Config.Backends, backend)
+}
+
+func (b *Balancer) RemoveBackend(address string, port int) {
+	b.BackendsMu.Lock()
+	defer b.BackendsMu.Unlock()
+
+	backends := *b.Config.Backends
+	for i, existing := range backends {
+		if existing.Address == address && existing.Port == port {
+			*b.Config.Backends = append(backends[:i], backends[i+1:]...)
+			return
+		}
+	}
 }
 
 /* Monitoring health and performance */
