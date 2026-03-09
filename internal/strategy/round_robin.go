@@ -4,38 +4,38 @@ import (
 	"errors"
 	"sync"
 
-	"load-balancer/internal/config"
+	cmn "load-balancer/internal/common"
 )
 
-type RoundRobin struct {
-	backends    *[]config.Backend
+type RoundRobinStrategy struct {
+	backends    []cmn.Backend
 	backendsMu  *sync.RWMutex
 	connTracker *BackendConnections
 	current     int
 }
 
-func NewRoundRobin(backends *[]config.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections) *RoundRobin {
-	return &RoundRobin{
+func NewRoundRobin(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections) *RoundRobinStrategy {
+	return &RoundRobinStrategy{
 		backends:    backends,
 		backendsMu:  backendsMu,
 		connTracker: connTracker,
 	}
 }
 
-func (rr *RoundRobin) PickBackend() (config.Backend, error) {
+func (rr *RoundRobinStrategy) PickBackend() (cmn.Backend, error) {
 	rr.backendsMu.RLock()
 	defer rr.backendsMu.RUnlock()
 	rr.connTracker.Mu.Lock()
 	defer rr.connTracker.Mu.Unlock()
 
-	n := len(*rr.backends)
+	n := len(rr.backends)
 	if n == 0 {
-		return config.Backend{}, errors.New("no backends available")
+		return cmn.Backend{}, errors.New("no backends available")
 	}
 
 	for i := 0; i < n; i++ {
 		idx := (rr.current + i) % n
-		b := (*rr.backends)[idx]
+		b := rr.backends[idx]
 		key := BackendKey(b)
 		if rr.connTracker.Conns[key] < b.MaxConnections {
 			rr.current = (idx + 1) % n
@@ -44,10 +44,10 @@ func (rr *RoundRobin) PickBackend() (config.Backend, error) {
 		}
 	}
 
-	return config.Backend{}, errors.New("all backends at max connections")
+	return cmn.Backend{}, errors.New("all backends at max connections")
 }
 
-func (rr *RoundRobin) OnRelease(backend config.Backend) {
+func (rr *RoundRobinStrategy) OnRelease(backend cmn.Backend) {
 	rr.connTracker.Mu.Lock()
 	defer rr.connTracker.Mu.Unlock()
 

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	cmn "load-balancer/internal/common"
 	"load-balancer/internal/config"
 	"load-balancer/internal/strategy"
 )
@@ -24,13 +25,13 @@ const (
 type Balancer struct {
 	Config                  *config.Config
 	State                   int
-	StateMu                 *sync.RWMutex
+	StateMu                 sync.RWMutex
 	Strategy                strategy.Strategy
-	LoadBalancingStrategyMu *sync.RWMutex
-	IdleTimeoutSecMu        *sync.RWMutex
-	CurrConnectionsMu       *sync.Mutex
+	LoadBalancingStrategyMu sync.RWMutex
+	IdleTimeoutSecMu        sync.RWMutex
+	CurrConnectionsMu       sync.Mutex
 	CurrConnections         int
-	MaxConnectionsMu        *sync.Mutex
+	MaxConnectionsMu        sync.RWMutex
 	BackendsMu              *sync.RWMutex
 	BackendConns            *strategy.BackendConnections
 }
@@ -40,43 +41,41 @@ func NewBalancer(cfg *config.Config) *Balancer {
 	backendsMu := &sync.RWMutex{}
 	backendConns := strategy.NewBackendConnections()
 	switch cfg.LoadBalancingStrategy {
-	case config.RoundRobin:
+	case strategy.RoundRobin:
 		strat = strategy.NewRoundRobin(cfg.Backends, backendsMu, backendConns)
-	case config.LeastConnections:
+	case strategy.LeastConnections:
 		strat = strategy.NewLeastConnections(cfg.Backends, backendsMu, backendConns)
-	case config.Random:
+	case strategy.Random:
 		strat = strategy.NewRandom(cfg.Backends, backendsMu, backendConns)
 	default:
 		panic(fmt.Sprintf("invalid load balancing strategy: %d", cfg.LoadBalancingStrategy))
 	}
 
 	return &Balancer{
-		Config:                  cfg,
-		State:                   IDLE,
-		StateMu:                 &sync.RWMutex{},
-		Strategy:                strat,
-		LoadBalancingStrategyMu: &sync.RWMutex{},
-		IdleTimeoutSecMu:        &sync.RWMutex{},
-		MaxConnectionsMu:        &sync.Mutex{},
-		BackendsMu:              backendsMu,
-		BackendConns:            backendConns,
+		Config:          cfg,
+		State:           IDLE,
+		Strategy:        strat,
+		CurrConnections: 0,
+		BackendsMu:      backendsMu,
+		BackendConns:    backendConns,
 	}
 }
 
 /* Load balancing logic */
 
-func (b *Balancer) Balance(
+func (b *Balancer) Start(
 	gracefulShutdownCtx context.Context,
 	immediateShutdownCtx context.Context,
 ) {
 	// State management
 	b.StateMu.Lock()
-	if b.State == BUSY {
+	if b.State != IDLE {
 		b.StateMu.Unlock()
-		panic("balancer is already running")
+		panic("balancer is cannot be started")
 	}
 	b.State = BUSY
 	b.StateMu.Unlock()
+	// Ensure we set state back to IDLE when balancing ends
 	defer func() {
 		b.StateMu.Lock()
 		b.State = IDLE
@@ -120,7 +119,7 @@ func (b *Balancer) Balance(
 
 			// Check max connections before handling the new connection
 			b.CurrConnectionsMu.Lock()
-			b.MaxConnectionsMu.Lock()
+			b.MaxConnectionsMu.RLock()
 			if b.CurrConnections >= b.Config.MaxConnections {
 				b.CurrConnectionsMu.Unlock()
 				b.MaxConnectionsMu.Unlock()
@@ -233,7 +232,8 @@ func (b *Balancer) handleConnection(clientConn net.Conn, stopCtx context.Context
 	}
 	defer strat.OnRelease(backend) // Ensure backend is released back to the strategy after handling the connection
 
-	backendConn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", backend.Address, backend.Port))
+	connTimeout := time.Duration(b.Config.ServerConnTimeoutSec) * time.Second
+	backendConn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", backend.Address, backend.Port), connTimeout)
 	if err != nil {
 		clientConn.Close() // Close client connection if backend connection fails
 		return
@@ -305,11 +305,11 @@ func (r *idleTimeoutReader) Read(p []byte) (int, error) {
 func (b *Balancer) UpdateLoadBalancingStrategy(strategyType int) {
 	var strat strategy.Strategy
 	switch strategyType {
-	case config.RoundRobin:
+	case strategy.RoundRobin:
 		strat = strategy.NewRoundRobin(b.Config.Backends, b.BackendsMu, b.BackendConns)
-	case config.LeastConnections:
+	case strategy.LeastConnections:
 		strat = strategy.NewLeastConnections(b.Config.Backends, b.BackendsMu, b.BackendConns)
-	case config.Random:
+	case strategy.Random:
 		strat = strategy.NewRandom(b.Config.Backends, b.BackendsMu, b.BackendConns)
 	default:
 		return // Invalid strategy type, ignore the update
@@ -333,30 +333,33 @@ func (b *Balancer) UpdateMaxConnections(max int) {
 	b.Config.MaxConnections = max
 }
 
-func (b *Balancer) AddBackend(backend config.Backend) {
+func (b *Balancer) AddBackend(backend cmn.Backend) {
 	b.BackendsMu.Lock()
 	defer b.BackendsMu.Unlock()
 
-	for _, existing := range *b.Config.Backends {
+	for _, existing := range b.Config.Backends {
 		if existing.Address == backend.Address && existing.Port == backend.Port {
 			return // Already exists
 		}
 	}
 
-	*b.Config.Backends = append(*b.Config.Backends, backend)
+	// Add the new backend
+	b.Config.Backends = append(b.Config.Backends, backend)
+	// Initialize connection count for the new backend in the strategy
+	b.BackendConns.Mu.Lock()
+	b.BackendConns.Conns[strategy.BackendKey(backend)] = 0
+	b.BackendConns.Mu.Unlock()
 }
 
 func (b *Balancer) RemoveBackend(address string, port int) {
 	b.BackendsMu.Lock()
 	defer b.BackendsMu.Unlock()
 
-	backends := *b.Config.Backends
+	backends := b.Config.Backends
 	for i, existing := range backends {
 		if existing.Address == address && existing.Port == port {
-			*b.Config.Backends = append(backends[:i], backends[i+1:]...)
+			b.Config.Backends = append(backends[:i], backends[i+1:]...)
 			return
 		}
 	}
 }
-
-/* Monitoring health and performance */

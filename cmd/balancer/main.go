@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"load-balancer/internal/balancer"
-	"load-balancer/internal/client"
 	"load-balancer/internal/config"
 	"load-balancer/internal/flags"
+	"load-balancer/internal/ui"
 )
 
 func main() {
@@ -25,14 +25,20 @@ func main() {
 	immediateCtx, cancelImmediate := context.WithCancel(context.Background())
 	defer cancelGraceful()
 	defer cancelImmediate()
+
 	balancer := balancer.NewBalancer(cfg) // Create a new balancer instance
-	balancer.Balance(gracefulCtx, immediateCtx)
 
-	// Start client listener in a separate goroutine
-	client := &client.Client{
-		Config:   cfg,
-		Balancer: balancer,
+	// Start balancer
+	go balancer.Start(gracefulCtx, immediateCtx)
+
+	// Start management HTTP server
+	mgmt := &ui.UI{
+		Config:          cfg,
+		Balancer:        balancer,
+		GracefulCtx:     gracefulCtx,
+		GracefulCancel:  cancelGraceful,
+		ImmediateCtx:    immediateCtx,
+		ImmediateCancel: cancelImmediate,
 	}
-
-	client.Start(gracefulCtx, immediateCtx) // Start the client listener
+	mgmt.Start()
 }

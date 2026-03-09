@@ -4,38 +4,38 @@ import (
 	"errors"
 	"sync"
 
-	"load-balancer/internal/config"
+	cmn "load-balancer/internal/common"
 )
 
-type LeastConnections struct {
-	backends    *[]config.Backend
+type LeastConnectionsStrategy struct {
+	backends    []cmn.Backend
 	backendsMu  *sync.RWMutex
 	connTracker *BackendConnections
 }
 
-func NewLeastConnections(backends *[]config.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections) *LeastConnections {
-	return &LeastConnections{
+func NewLeastConnections(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections) *LeastConnectionsStrategy {
+	return &LeastConnectionsStrategy{
 		backends:    backends,
 		backendsMu:  backendsMu,
 		connTracker: connTracker,
 	}
 }
 
-func (lc *LeastConnections) PickBackend() (config.Backend, error) {
+func (lc *LeastConnectionsStrategy) PickBackend() (cmn.Backend, error) {
 	lc.backendsMu.RLock()
 	defer lc.backendsMu.RUnlock()
 	lc.connTracker.Mu.Lock()
 	defer lc.connTracker.Mu.Unlock()
 
-	if len(*lc.backends) == 0 {
-		return config.Backend{}, errors.New("no backends available")
+	if len(lc.backends) == 0 {
+		return cmn.Backend{}, errors.New("no backends available")
 	}
 
-	var picked config.Backend
+	var picked cmn.Backend
 	pickedConns := -1
 	found := false
 
-	for _, b := range *lc.backends {
+	for _, b := range lc.backends {
 		key := BackendKey(b)
 		conns := lc.connTracker.Conns[key]
 		if conns >= b.MaxConnections {
@@ -49,14 +49,14 @@ func (lc *LeastConnections) PickBackend() (config.Backend, error) {
 	}
 
 	if !found {
-		return config.Backend{}, errors.New("all backends at max connections")
+		return cmn.Backend{}, errors.New("all backends at max connections")
 	}
 
 	lc.connTracker.Conns[BackendKey(picked)]++
 	return picked, nil
 }
 
-func (lc *LeastConnections) OnRelease(backend config.Backend) {
+func (lc *LeastConnectionsStrategy) OnRelease(backend cmn.Backend) {
 	lc.connTracker.Mu.Lock()
 	defer lc.connTracker.Mu.Unlock()
 

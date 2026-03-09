@@ -5,27 +5,29 @@ import (
 	"os"
 	"strings"
 
+	cmn "load-balancer/internal/common"
 	"load-balancer/internal/flags"
+	"load-balancer/internal/strategy"
 
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	RoundRobin = iota
-	LeastConnections
-	Random
-)
-
-var strategyMap = map[string]int{
-	"roundrobin":       RoundRobin,
-	"leastconnections": LeastConnections,
-	"random":           Random,
+var strategyNames = map[int]string{
+	strategy.RoundRobin:       "roundrobin",
+	strategy.LeastConnections: "leastconnections",
+	strategy.Random:           "random",
 }
 
-type Backend struct {
-	Address        string `yaml:"Address"`
-	Port           int    `yaml:"Port"`
-	MaxConnections int    `yaml:"MaxConnections"`
+func ParseStrategy(name string) (int, bool) {
+	s, ok := strategy.StrategyMap[strings.ToLower(name)]
+	return s, ok
+}
+
+func StrategyName(strategy int) string {
+	if name, ok := strategyNames[strategy]; ok {
+		return name
+	}
+	return "unknown"
 }
 
 type Config struct {
@@ -35,17 +37,17 @@ type Config struct {
 	ServerConnTimeoutSec  int
 	IdleTimeoutSec        int
 	MaxConnections        int
-	Backends              *[]Backend // Pointer to slice for easier updates
+	Backends              []cmn.Backend
 }
 
 type rawConfig struct {
-	ListenerPort          int       `yaml:"ListenerPort"`
-	ClientPort            int       `yaml:"ClientPort"`
-	LoadBalancingStrategy string    `yaml:"LoadBalancingStrategy"`
-	ServerConnTimeoutSec  int       `yaml:"ServerConnTimeoutSec"`
-	IdleTimeoutSec        int       `yaml:"IdleTimeoutSec"`
-	MaxConnections        int       `yaml:"MaxConnections"`
-	Backends              []Backend `yaml:"Backends"`
+	ListenerPort          int           `yaml:"ListenerPort"`
+	ClientPort            int           `yaml:"ClientPort"`
+	LoadBalancingStrategy string        `yaml:"LoadBalancingStrategy"`
+	ServerConnTimeoutSec  int           `yaml:"ServerConnTimeoutSec"`
+	IdleTimeoutSec        int           `yaml:"IdleTimeoutSec"`
+	MaxConnections        int           `yaml:"MaxConnections"`
+	Backends              []cmn.Backend `yaml:"Backends"`
 }
 
 func LoadConfig(f *flags.Flags) (*Config, error) {
@@ -92,7 +94,7 @@ func LoadConfig(f *flags.Flags) (*Config, error) {
 	if f.Strategy.Ok {
 		cfg.LoadBalancingStrategy = f.Strategy.Value
 	} else if f.ConfigPath.Ok {
-		strategy, ok := strategyMap[strings.ToLower(raw.LoadBalancingStrategy)]
+		strategy, ok := strategy.StrategyMap[strings.ToLower(raw.LoadBalancingStrategy)]
 		if !ok {
 			return nil, fmt.Errorf("unknown load balancing strategy: %q", raw.LoadBalancingStrategy)
 		}
@@ -129,7 +131,7 @@ func LoadConfig(f *flags.Flags) (*Config, error) {
 	}
 
 	// Backends - merge from both sources, deduplicate
-	var backends []Backend
+	var backends []cmn.Backend
 	if f.ConfigPath.Ok {
 		backends = raw.Backends
 	}
@@ -139,8 +141,8 @@ func LoadConfig(f *flags.Flags) (*Config, error) {
 	if len(backends) == 0 {
 		return nil, fmt.Errorf("at least one backend is required: use --backends or --config")
 	}
-	cfg.Backends = &backends // Store pointer to slice for easier updates
-	for _, b := range *cfg.Backends {
+	cfg.Backends = backends
+	for _, b := range cfg.Backends {
 		if err := validateBackend(b); err != nil {
 			return nil, fmt.Errorf("invalid backend %s:%d: %w", b.Address, b.Port, err)
 		}
@@ -149,7 +151,7 @@ func LoadConfig(f *flags.Flags) (*Config, error) {
 	return cfg, nil
 }
 
-func mergeBackends(backends []Backend, extraBackends []flags.Backend) []Backend {
+func mergeBackends(backends []cmn.Backend, extraBackends []cmn.Backend) []cmn.Backend {
 	seen := make(map[string]struct{})
 	for _, b := range backends {
 		key := fmt.Sprintf("%s:%d", b.Address, b.Port)
@@ -158,7 +160,7 @@ func mergeBackends(backends []Backend, extraBackends []flags.Backend) []Backend 
 	for _, b := range extraBackends {
 		key := fmt.Sprintf("%s:%d", b.Address, b.Port)
 		if _, ok := seen[key]; !ok {
-			backends = append(backends, Backend{Address: b.Address, Port: b.Port, MaxConnections: b.MaxConnections})
+			backends = append(backends, cmn.Backend{Address: b.Address, Port: b.Port, MaxConnections: b.MaxConnections})
 			seen[key] = struct{}{}
 		}
 	}
@@ -172,7 +174,7 @@ func validatePort(port int) error {
 	return nil
 }
 
-func validateBackend(b Backend) error {
+func validateBackend(b cmn.Backend) error {
 	if b.Address == "" {
 		return fmt.Errorf("backend address cannot be empty")
 	}

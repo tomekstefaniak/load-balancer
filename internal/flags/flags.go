@@ -5,24 +5,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
-)
 
-// Re-defining Backend here to avoid circular dependency with config package
-type Backend struct {
-	Address        string
-	Port           int
-	MaxConnections int
-}
+	cmn "load-balancer/internal/common"
+	"load-balancer/internal/strategy"
+)
 
 type Flag[V any] struct {
 	Value V
 	Ok    bool
-}
-
-var strategyMap = map[string]int{
-	"roundrobin":       0,
-	"leastconnections": 1,
-	"random":           2,
 }
 
 type Flags struct {
@@ -33,7 +23,7 @@ type Flags struct {
 	ServerConnTimeout Flag[int]
 	Timeout           Flag[int]
 	MaxConnections    Flag[int]
-	Backends          Flag[[]Backend]
+	Backends          Flag[[]cmn.Backend]
 }
 
 func ParseFlags() (*Flags, error) {
@@ -76,7 +66,7 @@ func ParseFlags() (*Flags, error) {
 				return &Flags{}, fmt.Errorf("--strategy requires a Value")
 			}
 			i++
-			strategy, Ok := strategyMap[strings.ToLower(args[i])]
+			strategy, Ok := strategy.StrategyMap[strings.ToLower(args[i])]
 			if !Ok {
 				return &Flags{}, fmt.Errorf("--strategy unknown Value: %q", args[i])
 			}
@@ -116,7 +106,7 @@ func ParseFlags() (*Flags, error) {
 			flags.MaxConnections = Flag[int]{Value: maxConn, Ok: true}
 
 		case "--backends":
-			var backends []Backend
+			var backends []cmn.Backend
 			for i+3 < len(args) && !strings.HasPrefix(args[i+1], "--") {
 				address := args[i+1]
 				port, err := strconv.Atoi(args[i+2])
@@ -127,13 +117,13 @@ func ParseFlags() (*Flags, error) {
 				if err != nil {
 					return &Flags{}, fmt.Errorf("--backends invalid max connections: %q", args[i+3])
 				}
-				backends = append(backends, Backend{Address: address, Port: port, MaxConnections: maxConn})
+				backends = append(backends, cmn.Backend{Address: address, Port: port, MaxConnections: maxConn})
 				i += 3
 			}
 			if len(backends) == 0 {
 				return &Flags{}, fmt.Errorf("--backends requires at least one <address> <port> pair")
 			}
-			flags.Backends = Flag[[]Backend]{Value: backends, Ok: true}
+			flags.Backends = Flag[[]cmn.Backend]{Value: backends, Ok: true}
 
 		default:
 			return &Flags{}, fmt.Errorf("unknown flag: %q", args[i])
