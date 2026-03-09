@@ -4,7 +4,7 @@ LoadBalancingStrategy: LeastConnections # Load balancing strategy to use
 ServerConnTimeoutSec: 30 # Timeout for establishing a connection to a backend server
 IdleTimeoutSec: 120 # Timeout after which an idle connection will be closed
 MaxConnections: 1000 # Maximum number of concurrent connections the load balancer will accept
-BackendServers: # List of backend servers to which the load balancer will forward requests
+Backends: # List of backend servers to which the load balancer will forward requests
   - Address: "127.0.0.1"
     Port: 8081
     MaxConnections: 100

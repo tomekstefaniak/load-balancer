@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 
-	"lil-balancer/flags"
-	"lil-balancer/config"
 	"lil-balancer/balancer"
+	"lil-balancer/config"
+	"lil-balancer/flags"
+	"lil-balancer/client"
 )
 
 func main() {
@@ -25,7 +26,13 @@ func main() {
 	defer cancelGraceful()
 	defer cancelImmediate()
 	balancer := balancer.NewBalancer(cfg) // Create a new balancer instance
-	balancer.Balance(gracefulCtx, immediateCtx) 
+	balancer.Balance(gracefulCtx, immediateCtx)
 
 	// Start client listener in a separate goroutine
+	client := &client.Client{
+		Config: cfg,
+		Balancer: balancer,
+	}
+
+	client.Start(gracefulCtx, immediateCtx) // Start the client listener
 }

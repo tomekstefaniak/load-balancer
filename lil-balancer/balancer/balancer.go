@@ -17,17 +17,19 @@ import (
 const (
 	BUSY = iota
 	IDLE
+	STOPPING_GRACEFULLY
+	STOPPING_IMMEDIATELY
 )
 
 type Balancer struct {
 	Config                  *config.Config
-	State 				    int
-	StateMu				   *sync.RWMutex
+	State                   int
+	StateMu                 *sync.RWMutex
 	Strategy                strategy.Strategy
 	LoadBalancingStrategyMu *sync.RWMutex
-	IdleTimeoutSecMu  *sync.RWMutex
-	CurrConnectionsMu *sync.Mutex
-	CurrConnections    int
+	IdleTimeoutSecMu        *sync.RWMutex
+	CurrConnectionsMu       *sync.Mutex
+	CurrConnections         int
 	MaxConnectionsMu        *sync.Mutex
 	BackendsMu              *sync.RWMutex
 	BackendConns            *strategy.BackendConnections
@@ -54,7 +56,7 @@ func NewBalancer(cfg *config.Config) *Balancer {
 		StateMu:                 &sync.RWMutex{},
 		Strategy:                strat,
 		LoadBalancingStrategyMu: &sync.RWMutex{},
-		IdleTimeoutSecMu:  &sync.RWMutex{},
+		IdleTimeoutSecMu:        &sync.RWMutex{},
 		MaxConnectionsMu:        &sync.Mutex{},
 		BackendsMu:              backendsMu,
 		BackendConns:            backendConns,
@@ -75,12 +77,13 @@ func (b *Balancer) Balance(
 	}
 	b.State = BUSY
 	b.StateMu.Unlock()
-	defer func() { 
+	defer func() {
 		b.StateMu.Lock()
 		b.State = IDLE
 		b.StateMu.Unlock()
 	}()
 
+	// Start listening for incoming client connections
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", b.Config.ListenerPort))
 	if err != nil {
 		panic(fmt.Errorf("failed to start listener: %w", err))
@@ -90,7 +93,9 @@ func (b *Balancer) Balance(
 	sigTermCtx, sigTermCancel := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer sigTermCancel() // Close the context when balancing ends
 
+	// Wait group for managing active connections during shutdown
 	balancingWG := &sync.WaitGroup{}
+	// Context for managing active connections during shutdown
 	connectionsCtx, cancel := context.WithCancel(context.Background())
 
 	// Accept incoming client connections
@@ -115,13 +120,16 @@ func (b *Balancer) Balance(
 
 			// Check max connections before handling the new connection
 			b.CurrConnectionsMu.Lock()
+			b.MaxConnectionsMu.Lock()
 			if b.CurrConnections >= b.Config.MaxConnections {
 				b.CurrConnectionsMu.Unlock()
+				b.MaxConnectionsMu.Unlock()
 				clientConn.Close() // Reject new connection if max connections reached
 				continue
 			}
 			b.CurrConnections++
 			b.CurrConnectionsMu.Unlock()
+			b.MaxConnectionsMu.Unlock()
 
 			// Handle the connection in a new goroutine
 			balancingWG.Add(1)
@@ -134,20 +142,73 @@ func (b *Balancer) Balance(
 
 	// Wait for shutdown signal
 	select {
-	// Graceful shutdowns allow existing connections to finish
+	// Graceful shutdown allow existing connections to finish
 	case <-gracefulShutdownCtx.Done():
+		// Change state to stopping gracefully
+		b.StateMu.Lock()
+		b.State = STOPPING_GRACEFULLY
+		b.StateMu.Unlock()
+
 		listener.Close() // Stop accepting new connections
+		
+		balancingDone := make(chan struct{})
+		go func() {
+			balancingWG.Wait() // Wait for all ongoing connections to finish
+			close(balancingDone)
+		}()
+
+		select {
+		case <-balancingDone:
+			// All connections finished gracefully
+			cancel() // Finally cancel the context as a safety measure
+		case <-immediateShutdownCtx.Done():
+			// Change state to stopping immediately
+			b.StateMu.Lock()
+			b.State = STOPPING_IMMEDIATELY
+			b.StateMu.Unlock()
+
+			// If an immediate shutdown signal is received during graceful shutdown, force close all connections
+			cancel() // Cancel the connections context to signal all handlers to stop immediately
+			balancingWG.Wait() // Wait for all handlers to acknowledge the cancellation
+		}
+
+	// SIGTERM signal initiates graceful shutdown
 	case <-sigTermCtx.Done():
+		// Change state to stopping gracefully		
+		b.StateMu.Lock()
+		b.State = STOPPING_GRACEFULLY
+		b.StateMu.Unlock()
+
 		listener.Close() // Stop accepting new connections
+		
+		balancingDone := make(chan struct{})
+		go func() {
+			balancingWG.Wait() // Wait for all ongoing connections to finish
+			close(balancingDone)
+		}()
+
+		select {
+		case <-balancingDone:
+			// All connections finished gracefully
+			cancel() // Finally cancel the context as a safety measure
+		case <-immediateShutdownCtx.Done():
+			// If an immediate shutdown signal is received during graceful shutdown, force close all connections
+			cancel() // Cancel the connections context to signal all handlers to stop immediately
+			balancingWG.Wait() // Wait for all handlers to acknowledge the cancellation
+		}
+
 	// Immediate shutdowns forcefully close all connections
 	case <-immediateShutdownCtx.Done():
+		// Change state to stopping immediately
+		b.StateMu.Lock()
+		b.State = STOPPING_IMMEDIATELY
+		b.StateMu.Unlock()
+
 		listener.Close() // Stop accepting new connections
 		cancel()         // Cancel the connections context to signal all handlers to stop immediately
-	}
+		balancingWG.Wait() // Wait for all ongoing connections to finish
 
-	// Wait for all ongoing connections to finish
-	balancingWG.Wait()
-	cancel() // Finally cancel the context as a safety measure
+	}
 }
 
 func (b *Balancer) handleConnection(clientConn net.Conn, stopCtx context.Context) {
