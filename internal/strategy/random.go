@@ -12,21 +12,23 @@ type RandomStrategy struct {
 	backends    []cmn.Backend
 	backendsMu  *sync.RWMutex
 	connTracker *BackendConnections
+	connMu      *sync.Mutex
 }
 
-func NewRandom(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections) *RandomStrategy {
+func NewRandom(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections, connMu *sync.Mutex) *RandomStrategy {
 	return &RandomStrategy{
 		backends:    backends,
 		backendsMu:  backendsMu,
 		connTracker: connTracker,
+		connMu:      connMu,
 	}
 }
 
 func (r *RandomStrategy) PickBackend() (cmn.Backend, error) {
 	r.backendsMu.RLock()
 	defer r.backendsMu.RUnlock()
-	r.connTracker.Mu.Lock()
-	defer r.connTracker.Mu.Unlock()
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
 
 	n := len(r.backends)
 	if n == 0 {
@@ -48,8 +50,8 @@ func (r *RandomStrategy) PickBackend() (cmn.Backend, error) {
 }
 
 func (r *RandomStrategy) OnRelease(backend cmn.Backend) {
-	r.connTracker.Mu.Lock()
-	defer r.connTracker.Mu.Unlock()
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
 
 	key := BackendKey(backend)
 	if r.connTracker.Conns[key] > 0 {

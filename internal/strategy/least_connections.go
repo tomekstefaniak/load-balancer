@@ -11,21 +11,23 @@ type LeastConnectionsStrategy struct {
 	backends    []cmn.Backend
 	backendsMu  *sync.RWMutex
 	connTracker *BackendConnections
+	connMu      *sync.Mutex
 }
 
-func NewLeastConnections(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections) *LeastConnectionsStrategy {
+func NewLeastConnections(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections, connMu *sync.Mutex) *LeastConnectionsStrategy {
 	return &LeastConnectionsStrategy{
 		backends:    backends,
 		backendsMu:  backendsMu,
 		connTracker: connTracker,
+		connMu:      connMu,
 	}
 }
 
 func (lc *LeastConnectionsStrategy) PickBackend() (cmn.Backend, error) {
 	lc.backendsMu.RLock()
 	defer lc.backendsMu.RUnlock()
-	lc.connTracker.Mu.Lock()
-	defer lc.connTracker.Mu.Unlock()
+	lc.connMu.Lock()
+	defer lc.connMu.Unlock()
 
 	if len(lc.backends) == 0 {
 		return cmn.Backend{}, errors.New("no backends available")
@@ -57,8 +59,8 @@ func (lc *LeastConnectionsStrategy) PickBackend() (cmn.Backend, error) {
 }
 
 func (lc *LeastConnectionsStrategy) OnRelease(backend cmn.Backend) {
-	lc.connTracker.Mu.Lock()
-	defer lc.connTracker.Mu.Unlock()
+	lc.connMu.Lock()
+	defer lc.connMu.Unlock()
 
 	key := BackendKey(backend)
 	if lc.connTracker.Conns[key] > 0 {

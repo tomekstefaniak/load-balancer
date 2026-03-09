@@ -2,7 +2,6 @@ package strategy
 
 import (
 	"fmt"
-	"sync"
 
 	cmn "load-balancer/internal/common"
 )
@@ -28,7 +27,6 @@ type Strategy interface {
 // All strategies receive a pointer to the same instance so connection counts
 // persist across strategy swaps.
 type BackendConnections struct {
-	Mu    sync.Mutex
 	Conns map[string]int
 }
 

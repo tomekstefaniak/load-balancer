@@ -33,6 +33,7 @@ type Balancer struct {
 	CurrConnections         int
 	MaxConnectionsMu        sync.RWMutex
 	BackendsMu              *sync.RWMutex
+	BackendConnsMu          sync.Mutex
 	BackendConns            *strategy.BackendConnections
 }
 
@@ -40,25 +41,27 @@ func NewBalancer(cfg *config.Config) *Balancer {
 	var strat strategy.Strategy
 	backendsMu := &sync.RWMutex{}
 	backendConns := strategy.NewBackendConnections()
-	switch cfg.LoadBalancingStrategy {
-	case strategy.RoundRobin:
-		strat = strategy.NewRoundRobin(cfg.Backends, backendsMu, backendConns)
-	case strategy.LeastConnections:
-		strat = strategy.NewLeastConnections(cfg.Backends, backendsMu, backendConns)
-	case strategy.Random:
-		strat = strategy.NewRandom(cfg.Backends, backendsMu, backendConns)
-	default:
-		panic(fmt.Sprintf("invalid load balancing strategy: %d", cfg.LoadBalancingStrategy))
-	}
-
-	return &Balancer{
+	b := &Balancer{
 		Config:          cfg,
 		State:           IDLE,
-		Strategy:        strat,
 		CurrConnections: 0,
 		BackendsMu:      backendsMu,
 		BackendConns:    backendConns,
 	}
+	connMu := &b.BackendConnsMu
+	switch cfg.LoadBalancingStrategy {
+	case strategy.RoundRobin:
+		strat = strategy.NewRoundRobin(cfg.Backends, backendsMu, backendConns, connMu)
+	case strategy.LeastConnections:
+		strat = strategy.NewLeastConnections(cfg.Backends, backendsMu, backendConns, connMu)
+	case strategy.Random:
+		strat = strategy.NewRandom(cfg.Backends, backendsMu, backendConns, connMu)
+	default:
+		panic(fmt.Sprintf("invalid load balancing strategy: %d", cfg.LoadBalancingStrategy))
+	}
+	b.Strategy = strat
+
+	return b
 }
 
 /* Load balancing logic */
@@ -306,11 +309,11 @@ func (b *Balancer) UpdateLoadBalancingStrategy(strategyType int) {
 	var strat strategy.Strategy
 	switch strategyType {
 	case strategy.RoundRobin:
-		strat = strategy.NewRoundRobin(b.Config.Backends, b.BackendsMu, b.BackendConns)
+		strat = strategy.NewRoundRobin(b.Config.Backends, b.BackendsMu, b.BackendConns, &b.BackendConnsMu)
 	case strategy.LeastConnections:
-		strat = strategy.NewLeastConnections(b.Config.Backends, b.BackendsMu, b.BackendConns)
+		strat = strategy.NewLeastConnections(b.Config.Backends, b.BackendsMu, b.BackendConns, &b.BackendConnsMu)
 	case strategy.Random:
-		strat = strategy.NewRandom(b.Config.Backends, b.BackendsMu, b.BackendConns)
+		strat = strategy.NewRandom(b.Config.Backends, b.BackendsMu, b.BackendConns, &b.BackendConnsMu)
 	default:
 		return // Invalid strategy type, ignore the update
 	}
@@ -346,9 +349,9 @@ func (b *Balancer) AddBackend(backend cmn.Backend) {
 	// Add the new backend
 	b.Config.Backends = append(b.Config.Backends, backend)
 	// Initialize connection count for the new backend in the strategy
-	b.BackendConns.Mu.Lock()
+	b.BackendConnsMu.Lock()
 	b.BackendConns.Conns[strategy.BackendKey(backend)] = 0
-	b.BackendConns.Mu.Unlock()
+	b.BackendConnsMu.Unlock()
 }
 
 func (b *Balancer) RemoveBackend(address string, port int) {
@@ -358,7 +361,10 @@ func (b *Balancer) RemoveBackend(address string, port int) {
 	backends := b.Config.Backends
 	for i, existing := range backends {
 		if existing.Address == address && existing.Port == port {
+			// Remove the backend from the configuration
 			b.Config.Backends = append(backends[:i], backends[i+1:]...)
+			// Remove connection count for the removed backend
+			delete(b.BackendConns.Conns, strategy.BackendKey(existing)) 
 			return
 		}
 	}

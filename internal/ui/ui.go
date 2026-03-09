@@ -228,12 +228,12 @@ func (u *UI) handleBackendConns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u.Balancer.BackendConns.Mu.Lock()
+	u.Balancer.BackendConnsMu.Lock()
 	conns := make(map[string]int, len(u.Balancer.BackendConns.Conns))
 	for k, v := range u.Balancer.BackendConns.Conns {
 		conns[k] = v
 	}
-	u.Balancer.BackendConns.Mu.Unlock()
+	u.Balancer.BackendConnsMu.Unlock()
 
 	// Build response with backend info alongside connection counts
 	u.Balancer.BackendsMu.RLock()

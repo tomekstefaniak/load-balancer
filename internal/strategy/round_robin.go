@@ -11,22 +11,24 @@ type RoundRobinStrategy struct {
 	backends    []cmn.Backend
 	backendsMu  *sync.RWMutex
 	connTracker *BackendConnections
+	connMu      *sync.Mutex
 	current     int
 }
 
-func NewRoundRobin(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections) *RoundRobinStrategy {
+func NewRoundRobin(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections, connMu *sync.Mutex) *RoundRobinStrategy {
 	return &RoundRobinStrategy{
 		backends:    backends,
 		backendsMu:  backendsMu,
 		connTracker: connTracker,
+		connMu:      connMu,
 	}
 }
 
 func (rr *RoundRobinStrategy) PickBackend() (cmn.Backend, error) {
 	rr.backendsMu.RLock()
 	defer rr.backendsMu.RUnlock()
-	rr.connTracker.Mu.Lock()
-	defer rr.connTracker.Mu.Unlock()
+	rr.connMu.Lock()
+	defer rr.connMu.Unlock()
 
 	n := len(rr.backends)
 	if n == 0 {
@@ -48,8 +50,8 @@ func (rr *RoundRobinStrategy) PickBackend() (cmn.Backend, error) {
 }
 
 func (rr *RoundRobinStrategy) OnRelease(backend cmn.Backend) {
-	rr.connTracker.Mu.Lock()
-	defer rr.connTracker.Mu.Unlock()
+	rr.connMu.Lock()
+	defer rr.connMu.Unlock()
 
 	key := BackendKey(backend)
 	if rr.connTracker.Conns[key] > 0 {

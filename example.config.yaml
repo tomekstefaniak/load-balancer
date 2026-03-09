@@ -7,7 +7,7 @@ MaxConnections: 1000 # Maximum number of concurrent connections the load balance
 Backends: # List of backend servers to which the load balancer will forward requests
   - Address: "127.0.0.1"
     Port: 8081
-    MaxConnections: 100
+    MaxConnections: 300
   - Address: "127.0.0.1"
     Port: 8082
-    MaxConnections: 100
+    MaxConnections: 300
