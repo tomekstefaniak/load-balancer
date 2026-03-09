@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"lil-balancer/flags"
+	"load-balancer/internal/flags"
 
 	"gopkg.in/yaml.v3"
 )

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"lil-balancer/config"
+	"load-balancer/internal/config"
 )
 
 type Strategy interface {

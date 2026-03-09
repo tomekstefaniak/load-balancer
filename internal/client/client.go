@@ -3,8 +3,8 @@ package client
 import (
 	"context"
 
-	"lil-balancer/balancer"
-	"lil-balancer/config"
+	"load-balancer/internal/balancer"
+	"load-balancer/internal/config"
 )
 
 type Client struct {
@@ -16,5 +16,5 @@ func (c *Client) Start(
 	stopCtx context.Context,
 	immediateShutdownCtx context.Context,
 ) {
-	
+
 }

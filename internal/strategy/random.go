@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"sync"
 
-	"lil-balancer/config"
+	"load-balancer/internal/config"
 )
 
 type Random struct {

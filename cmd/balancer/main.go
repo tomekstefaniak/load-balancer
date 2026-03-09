@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 
-	"lil-balancer/balancer"
-	"lil-balancer/config"
-	"lil-balancer/flags"
-	"lil-balancer/client"
+	"load-balancer/internal/balancer"
+	"load-balancer/internal/client"
+	"load-balancer/internal/config"
+	"load-balancer/internal/flags"
 )
 
 func main() {
@@ -30,7 +30,7 @@ func main() {
 
 	// Start client listener in a separate goroutine
 	client := &client.Client{
-		Config: cfg,
+		Config:   cfg,
 		Balancer: balancer,
 	}
 

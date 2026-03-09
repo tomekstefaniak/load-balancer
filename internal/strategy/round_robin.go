@@ -4,7 +4,7 @@ import (
 	"errors"
 	"sync"
 
-	"lil-balancer/config"
+	"load-balancer/internal/config"
 )
 
 type RoundRobin struct {

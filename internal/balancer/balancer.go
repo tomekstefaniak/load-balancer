@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"lil-balancer/config"
-	"lil-balancer/strategy"
+	"load-balancer/internal/config"
+	"load-balancer/internal/strategy"
 )
 
 const (
@@ -150,7 +150,7 @@ func (b *Balancer) Balance(
 		b.StateMu.Unlock()
 
 		listener.Close() // Stop accepting new connections
-		
+
 		balancingDone := make(chan struct{})
 		go func() {
 			balancingWG.Wait() // Wait for all ongoing connections to finish
@@ -168,19 +168,19 @@ func (b *Balancer) Balance(
 			b.StateMu.Unlock()
 
 			// If an immediate shutdown signal is received during graceful shutdown, force close all connections
-			cancel() // Cancel the connections context to signal all handlers to stop immediately
+			cancel()           // Cancel the connections context to signal all handlers to stop immediately
 			balancingWG.Wait() // Wait for all handlers to acknowledge the cancellation
 		}
 
 	// SIGTERM signal initiates graceful shutdown
 	case <-sigTermCtx.Done():
-		// Change state to stopping gracefully		
+		// Change state to stopping gracefully
 		b.StateMu.Lock()
 		b.State = STOPPING_GRACEFULLY
 		b.StateMu.Unlock()
 
 		listener.Close() // Stop accepting new connections
-		
+
 		balancingDone := make(chan struct{})
 		go func() {
 			balancingWG.Wait() // Wait for all ongoing connections to finish
@@ -193,7 +193,7 @@ func (b *Balancer) Balance(
 			cancel() // Finally cancel the context as a safety measure
 		case <-immediateShutdownCtx.Done():
 			// If an immediate shutdown signal is received during graceful shutdown, force close all connections
-			cancel() // Cancel the connections context to signal all handlers to stop immediately
+			cancel()           // Cancel the connections context to signal all handlers to stop immediately
 			balancingWG.Wait() // Wait for all handlers to acknowledge the cancellation
 		}
 
@@ -204,8 +204,8 @@ func (b *Balancer) Balance(
 		b.State = STOPPING_IMMEDIATELY
 		b.StateMu.Unlock()
 
-		listener.Close() // Stop accepting new connections
-		cancel()         // Cancel the connections context to signal all handlers to stop immediately
+		listener.Close()   // Stop accepting new connections
+		cancel()           // Cancel the connections context to signal all handlers to stop immediately
 		balancingWG.Wait() // Wait for all ongoing connections to finish
 
 	}
