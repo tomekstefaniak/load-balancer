@@ -8,13 +8,13 @@ import (
 )
 
 type LeastConnectionsStrategy struct {
-	backends    []cmn.Backend
+	backends    *[]cmn.Backend
 	backendsMu  *sync.RWMutex
 	connTracker *BackendConnections
 	connMu      *sync.Mutex
 }
 
-func NewLeastConnections(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections, connMu *sync.Mutex) *LeastConnectionsStrategy {
+func NewLeastConnections(backends *[]cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections, connMu *sync.Mutex) *LeastConnectionsStrategy {
 	return &LeastConnectionsStrategy{
 		backends:    backends,
 		backendsMu:  backendsMu,
@@ -29,7 +29,7 @@ func (lc *LeastConnectionsStrategy) PickBackend() (cmn.Backend, error) {
 	lc.connMu.Lock()
 	defer lc.connMu.Unlock()
 
-	if len(lc.backends) == 0 {
+	if len(*lc.backends) == 0 {
 		return cmn.Backend{}, errors.New("no backends available")
 	}
 
@@ -37,7 +37,7 @@ func (lc *LeastConnectionsStrategy) PickBackend() (cmn.Backend, error) {
 	pickedConns := -1
 	found := false
 
-	for _, b := range lc.backends {
+	for _, b := range *lc.backends {
 		key := BackendKey(b)
 		conns := lc.connTracker.Conns[key]
 		if conns >= b.MaxConnections {

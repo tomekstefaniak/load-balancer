@@ -8,14 +8,14 @@ import (
 )
 
 type RoundRobinStrategy struct {
-	backends    []cmn.Backend
+	backends    *[]cmn.Backend
 	backendsMu  *sync.RWMutex
 	connTracker *BackendConnections
 	connMu      *sync.Mutex
 	current     int
 }
 
-func NewRoundRobin(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections, connMu *sync.Mutex) *RoundRobinStrategy {
+func NewRoundRobin(backends *[]cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections, connMu *sync.Mutex) *RoundRobinStrategy {
 	return &RoundRobinStrategy{
 		backends:    backends,
 		backendsMu:  backendsMu,
@@ -30,14 +30,14 @@ func (rr *RoundRobinStrategy) PickBackend() (cmn.Backend, error) {
 	rr.connMu.Lock()
 	defer rr.connMu.Unlock()
 
-	n := len(rr.backends)
+	n := len(*rr.backends)
 	if n == 0 {
 		return cmn.Backend{}, errors.New("no backends available")
 	}
 
 	for i := 0; i < n; i++ {
 		idx := (rr.current + i) % n
-		b := rr.backends[idx]
+		b := (*rr.backends)[idx]
 		key := BackendKey(b)
 		if rr.connTracker.Conns[key] < b.MaxConnections {
 			rr.current = (idx + 1) % n

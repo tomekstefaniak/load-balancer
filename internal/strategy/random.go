@@ -9,13 +9,13 @@ import (
 )
 
 type RandomStrategy struct {
-	backends    []cmn.Backend
+	backends    *[]cmn.Backend
 	backendsMu  *sync.RWMutex
 	connTracker *BackendConnections
 	connMu      *sync.Mutex
 }
 
-func NewRandom(backends []cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections, connMu *sync.Mutex) *RandomStrategy {
+func NewRandom(backends *[]cmn.Backend, backendsMu *sync.RWMutex, connTracker *BackendConnections, connMu *sync.Mutex) *RandomStrategy {
 	return &RandomStrategy{
 		backends:    backends,
 		backendsMu:  backendsMu,
@@ -30,7 +30,7 @@ func (r *RandomStrategy) PickBackend() (cmn.Backend, error) {
 	r.connMu.Lock()
 	defer r.connMu.Unlock()
 
-	n := len(r.backends)
+	n := len(*r.backends)
 	if n == 0 {
 		return cmn.Backend{}, errors.New("no backends available")
 	}
@@ -38,7 +38,7 @@ func (r *RandomStrategy) PickBackend() (cmn.Backend, error) {
 	start := rand.Intn(n)
 	for i := 0; i < n; i++ {
 		idx := (start + i) % n
-		b := r.backends[idx]
+		b := (*r.backends)[idx]
 		key := BackendKey(b)
 		if r.connTracker.Conns[key] < b.MaxConnections {
 			r.connTracker.Conns[key]++
