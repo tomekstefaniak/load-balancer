@@ -111,6 +111,9 @@ func LoadConfig(f *flags.Flags) (*Config, error) {
 	} else {
 		return nil, fmt.Errorf("server connection timeout not set: use --server-conn-timeout or --config")
 	}
+	if err := validateTimeoutSec(cfg.ServerConnTimeoutSec); err != nil {
+		return nil, fmt.Errorf("invalid server connection timeout: %w", err)
+	}
 
 	// IdleTimeoutSec
 	if f.Timeout.Ok {
@@ -119,6 +122,9 @@ func LoadConfig(f *flags.Flags) (*Config, error) {
 		cfg.IdleTimeoutSec = raw.IdleTimeoutSec
 	} else {
 		return nil, fmt.Errorf("timeout not set: use --timeout or --config")
+	}
+	if err := validateTimeoutSec(cfg.IdleTimeoutSec); err != nil {
+		return nil, fmt.Errorf("invalid idle timeout: %w", err)
 	}
 
 	// MaxConnections
@@ -183,6 +189,13 @@ func validateBackend(b cmn.Backend) error {
 	}
 	if b.MaxConnections <= 0 {
 		return fmt.Errorf("backend max connections must be greater than 0")
+	}
+	return nil
+}
+
+func validateTimeoutSec(seconds int) error {
+	if seconds < 1 {
+		return fmt.Errorf("must be at least 1 second")
 	}
 	return nil
 }
