@@ -8,7 +8,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
+
+const requestTimeout = 5 * time.Second
+
+var httpClient = &http.Client{Timeout: requestTimeout}
 
 func main() {
 	args := os.Args[1:]
@@ -163,7 +168,7 @@ func parsePort(args []string) (int, []string, error) {
 }
 
 func doGet(url string) {
-	resp, err := http.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		fatal("request failed: " + err.Error())
 	}
@@ -172,7 +177,7 @@ func doGet(url string) {
 }
 
 func doPost(url string, jsonBody string) {
-	resp, err := http.Post(url, "application/json", bytes.NewBufferString(jsonBody))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBufferString(jsonBody))
 	if err != nil {
 		fatal("request failed: " + err.Error())
 	}
