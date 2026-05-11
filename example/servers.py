@@ -1,5 +1,5 @@
 import sys
-from http.server import HTTPServer, BaseHTTPRequestHandler, SimpleHTTPRequestHandler
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
 
 html = """
