@@ -98,7 +98,7 @@ func (b *Balancer) Start(
 	// Wait group for managing active connections during shutdown
 	balancingWG := &sync.WaitGroup{}
 	// Context for managing active connections during shutdown
-	connectionsCtx, cancel := context.WithCancel(context.Background())
+	connectionsCtx, cancelConnections := context.WithCancel(context.Background())
 
 	// Accept incoming client connections
 	balancingWG.Add(1)
@@ -162,7 +162,7 @@ func (b *Balancer) Start(
 		select {
 		case <-balancingDone:
 			// All connections finished gracefully
-			cancel() // Finally cancel the context as a safety measure
+			cancelConnections() // Finally cancel the context as a safety measure
 		case <-immediateShutdownCtx.Done():
 			// Change state to stopping immediately
 			b.StateMu.Lock()
@@ -170,8 +170,8 @@ func (b *Balancer) Start(
 			b.StateMu.Unlock()
 
 			// If an immediate shutdown signal is received during graceful shutdown, force close all connections
-			cancel()           // Cancel the connections context to signal all handlers to stop immediately
-			balancingWG.Wait() // Wait for all handlers to acknowledge the cancellation
+			cancelConnections() // Cancel the connections context to signal all handlers to stop immediately
+			balancingWG.Wait()  // Wait for all handlers to acknowledge the cancellation
 		}
 
 	// SIGTERM signal initiates graceful shutdown
@@ -192,11 +192,11 @@ func (b *Balancer) Start(
 		select {
 		case <-balancingDone:
 			// All connections finished gracefully
-			cancel() // Finally cancel the context as a safety measure
+			cancelConnections() // Finally cancel the context as a safety measure
 		case <-immediateShutdownCtx.Done():
 			// If an immediate shutdown signal is received during graceful shutdown, force close all connections
-			cancel()           // Cancel the connections context to signal all handlers to stop immediately
-			balancingWG.Wait() // Wait for all handlers to acknowledge the cancellation
+			cancelConnections() // Cancel the connections context to signal all handlers to stop immediately
+			balancingWG.Wait()  // Wait for all handlers to acknowledge the cancellation
 		}
 
 	// Immediate shutdowns forcefully close all connections
@@ -206,9 +206,9 @@ func (b *Balancer) Start(
 		b.State = STOPPING_IMMEDIATELY
 		b.StateMu.Unlock()
 
-		listener.Close()   // Stop accepting new connections
-		cancel()           // Cancel the connections context to signal all handlers to stop immediately
-		balancingWG.Wait() // Wait for all ongoing connections to finish
+		listener.Close()    // Stop accepting new connections
+		cancelConnections() // Cancel the connections context to signal all handlers to stop immediately
+		balancingWG.Wait()  // Wait for all ongoing connections to finish
 
 	}
 }
